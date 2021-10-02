@@ -19,7 +19,7 @@ from models.listcvae import UserListCVAEWithPrior
 from models.pivotcvae import PIVOTCVAE_MODELS
 import my_utils as utils
 import settings
-
+from my_utils import Logger
 
 
 ###################################################
@@ -289,13 +289,13 @@ def main(args):
             beta = betaList[i]
             args.beta = beta
             logPath = utils.make_gen_model_path(args, "log_beta/")
-            modelPath = utils.make_gen_model_path(args, "trained_beta/")
+            betaModelPath = utils.make_gen_model_path(args, "trained_beta/")
             betaLogger = Logger(logPath)
             betaLogger.log("beta = " + str(beta))
             train_on_dataset(trainset, valset, gen_model, betaModelPath, betaLogger, respModel, \
                     args.batch_size, args.epochs, args.lr, args.wdecay, beta)
             setproctitle.setproctitle("Socrate(" + str(i+1) + "/" + str(len(betaList)) + ")")
-            logger.log("Done, model saved to: " + modelPath)
+            logger.log("Done, model saved to: " + betaModelPath)
             
             
 def add_gen_model_parse(parser):

@@ -62,7 +62,7 @@ def make_data_path(args, root):
     return model_path
     
 def make_config_path(args, root):
-    model_path = root
+    model_path = root + '_'
     model_path += 'BS%d_' % args.batch_size
     model_path += 'lr%.5f_' % args.lr
     model_path += 'decay%.5f' % args.wdecay
@@ -85,6 +85,15 @@ def make_gen_model_path(args, root):
         model_path += "_dec" + str(args.dec_struct)
     elif "pivotcvae" in args.model:
         model_path += "_psm" + args.psm_struct + "_scm" + args.scm_struct + "_"
+    model_path += make_config_path(args, model_path)
+    build_path(model_path)
+    return model_path
+
+def make_model_path(args, root):
+    model_path = make_data_path(args, root) + "/"
+    model_path += args.model
+    if "neumf" in args.model:
+        model_path += "_struct" + str(args.struct)
     model_path += make_config_path(args, model_path)
     build_path(model_path)
     return model_path

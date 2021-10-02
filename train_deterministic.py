@@ -14,9 +14,9 @@ import time as timer
 
 import data_extract as dae
 from data_loader import UserSlateResponseDataset
-from response_model import UserResponseModel_MLP, sample_users
+from env.response_model import UserResponseModel_MLP, sample_users
 from models.deterministic import MF, NeuMF, DiverseMF
-from my_utils import make_model_path, Logger, add_sim_parse, ms2str
+from my_utils import make_model_path, Logger, ms2str
 import settings
 
 
@@ -177,7 +177,7 @@ def main(args):
     logPath = make_model_path(args, "log/")
     logger = Logger(logPath)
     if args.dataset != "spotify" and args.dataset != "yoochoose" and args.dataset != "movielens":
-        args.sim_root = True
+        #args.sim_root = True
         respModel, trainset, valset = dae.load_simulation(args, logger)
     elif args.dataset == "movielens":
         train, val = dae.read_movielens(entire = False)
@@ -228,7 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--resp_path', type=str, default="resp/resp_[48,256,256,5]_spotify_BS64_dim8_lr0.00030_decay0.00010", help='trained user response model, only valid when training generative rec model')
     
     # used when simulation
-    parser = add_sim_parse(parser)
+    parser = dae.add_sim_parse(parser)
     
     args = parser.parse_args()
     main(args)
