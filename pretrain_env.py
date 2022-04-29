@@ -23,6 +23,9 @@ import settings
 #######################################################
 
 def train_response_model(trainset, valset, f_size, s_size, struct, bs, epochs, lr, decay, device, model_path, logger):
+    
+#     python pretrain_env.py --dataset urmpmr --sim_dim 8 --n_user 1000 --n_item 3000 --n_train 100000 --n_val 10000 --n_test 10000 --pbias_min=-0.2 --pbias_max 0.2 --mr_factor 0.2 --dim 8 --resp_struct [48,256,256,5] --batch_size 64 --lr 0.001 --wdecay 0.001 --device cuda:0
+        
     '''
     @input:
     - trainset and valset: data_loader.UserSlateResponseDataset
@@ -145,6 +148,8 @@ def train_response_model(trainset, valset, f_size, s_size, struct, bs, epochs, l
 def main(args):
     logPath = utils.make_resp_model_path(args, "log/")
     logger = utils.Logger(logPath)
+    
+    # 模拟的数据，load进来模拟的数据
     if args.dataset != "yoochoose" and args.dataset != "movielens": # simulation envirionment
         respModel, trainset, valset = dae.load_simulation(args, logger)
     else: # real-world datasets
@@ -155,11 +160,13 @@ def main(args):
             trainset.balance_n_click()
             valset = UserSlateResponseDataset(val["features"], val["sessions"], val["responses"], args.nouser)
         elif args.dataset == "movielens":
-            train, val = dae.read_movielens(entire = True)
+            train, val = dae.read_movielens(entire = False)
             trainset = UserSlateResponseDataset(train["features"], train["sessions"], train["responses"], args.nouser)
             valset = UserSlateResponseDataset(val["features"], val["sessions"], val["responses"], args.nouser)
     # train response model
     modelPath = utils.make_resp_model_path(args, "resp/")
+    # [48,256,256,5]
+    # args.resp_struct[1:-1] --
     struct = [int(v) for v in args.resp_struct[1:-1].split(",")]
     import setproctitle 
     setproctitle.setproctitle("Kassandra")
@@ -180,5 +187,6 @@ if __name__ == '__main__':
     parser.add_argument('--resp_struct', type=str, default="[48,256,256,5]", help='mlp structure for prediction')
     
     args = parser.parse_args()
+
     main(args)
         

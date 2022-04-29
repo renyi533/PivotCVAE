@@ -54,25 +54,32 @@ def balance_n_click(slates, users, responses):
     print(nClick)
     return finalSlates, finalUsers, finalResponses
 
-def read_movielens(entire = False):
+def read_movielens(entire = False, cross=1):
+    # entire = False 这个参数
+    # test
     testset = {
-        "features": read_lines(DATA_ROOT + "movielens/test_slate.csv", [int, int, int, int, int]),
-        "sessions": read_lines(DATA_ROOT + "movielens/test_user.csv", [int]),
-        "responses": read_lines(DATA_ROOT + "movielens/test_resp.csv", [int, int, int, int, int])
+        "features": read_lines(DATA_ROOT + "movielens/test{}_slate.csv".format(cross), [int, int, int, int, int]),
+        "sessions": read_lines(DATA_ROOT + "movielens/test{}_user.csv".format(cross), [int]),
+        "responses": read_lines(DATA_ROOT + "movielens/test{}_resp.csv".format(cross), [int, int, int, int, int])
     }
-    if entire:
+    valset = {
+        "features": read_lines(DATA_ROOT + "movielens/val{}_slate.csv".format(cross), [int, int, int, int, int]),
+        "sessions": read_lines(DATA_ROOT + "movielens/val{}_user.csv".format(cross), [int]),
+        "responses": read_lines(DATA_ROOT + "movielens/val{}_resp.csv".format(cross), [int, int, int, int, int])
+    }
+    if entire: #trainset 走的这个分支
         trainset = {
-            "features": read_lines(DATA_ROOT + "movielens/entire_slate.csv", [int, int, int, int, int]),
-            "sessions": read_lines(DATA_ROOT + "movielens/entire_user.csv", [int]),
-            "responses": read_lines(DATA_ROOT + "movielens/entire_resp.csv", [int, int, int, int, int])
+            "features": read_lines(DATA_ROOT + "movielens/entire_slate.csv".format(cross), [int, int, int, int, int]),
+            "sessions": read_lines(DATA_ROOT + "movielens/entire_user.csv".format(cross), [int]),
+            "responses": read_lines(DATA_ROOT + "movielens/entire_resp.csv".format(cross), [int, int, int, int, int])
         }
     else:
         trainset = {
-            "features": read_lines(DATA_ROOT + "movielens/train_slate.csv", [int, int, int, int, int]),
-            "sessions": read_lines(DATA_ROOT + "movielens/train_user.csv", [int]),
-            "responses": read_lines(DATA_ROOT + "movielens/train_resp.csv", [int, int, int, int, int])
+            "features": read_lines(DATA_ROOT + "movielens/train{}_slate.csv".format(cross), [int, int, int, int, int]),
+            "sessions": read_lines(DATA_ROOT + "movielens/train{}_user.csv".format(cross), [int]),
+            "responses": read_lines(DATA_ROOT + "movielens/train{}_resp.csv".format(cross), [int, int, int, int, int])
         }
-    return trainset, testset
+    return trainset, valset, testset
 
 def read_yoochoose(from_encoded = True, entire_set = False):
     import pickle
@@ -188,9 +195,10 @@ def encode_yoochoose():
             
 def load_simulation(args, logger):
     simulatorPath = make_sim_path(args)
+    print(simulatorPath)
     if args.sim_root:
         logger.log("load from existing simulation data")
-        simulator = torch.load(open(simulatorPath, 'rb'))
+        simulator = torch.load(open(simulatorPath + "_simulator", 'rb'))
         trainset = pickle.load(open(simulatorPath + "_train", 'rb'))
         valset = pickle.load(open(simulatorPath + "_val", 'rb'))
     else:
@@ -224,17 +232,25 @@ def load_simulation(args, logger):
         torch.save(simulator, open(simulatorPath + "_simulator", 'wb'))
         pickle.dump(trainset, open(simulatorPath + "_train", 'wb'))
         pickle.dump(valset, open(simulatorPath + "_val", 'wb'))
+
     return simulator, trainset, valset
 
+# 添加模拟数据的一些额外参数
 def add_data_parse(parser):
     parser.add_argument('--dataset', type=str, default='spotify', help='dataset keyword from ' + str(DATA_KEYS))
     parser.add_argument('--s', type=int, default=5, help='number of items in a slate')
     parser.add_argument('--nouser', action='store_true', help='user may or may not be considered as input, make sure to change the corresponding model structure and environment')
+    #         import pdb
+#         pdb.set_trace()
+#         torch.save(simulator, open(simulatorPath + "_simulator", 'wb'))
+#         pickle.dump(trainset, open(simulatorPath + "_train", 'wb'))
+#         pickle.dump(valset, open(simulatorPath + "_val", 'wb'))
     return parser
 
+# 添加模拟数据
 def add_sim_parse(parser):
     parser.add_argument('--sim_root', action='store_true', help='set this to load simulation dataset from existing files')
-    parser.add_argument('--sim_dim', type=int, default=8, help='number of latent features')
+#     parser.add_argument('--sim_dim', type=int, default=8, help='number of latent features')
     parser.add_argument('--n_user', type=int, default=1000, help='number of user in the simulation')
     parser.add_argument('--n_item', type=int, default=3000, help='number of item in the simulation')
     parser.add_argument('--n_train', type=int, default=100000, help='number of records when generating dataset from simulation')
