@@ -291,8 +291,8 @@ def main(args):
         bestauc_set = []
         bestauc_val_set = []
         # train cross num
-        for i in range(1,2):
-            train, val, test = dae.read_movielens(entire = False, cross = i)
+        for i in range(1,11):
+            train, val, test = dae.read_movielens(entire = False, cross = 1)
             trainset = UserSlateResponseDataset(train["features"], train["sessions"], train["responses"], args.nouser)
             valset = UserSlateResponseDataset(val["features"], val["sessions"], val["responses"], args.nouser)
             testset = UserSlateResponseDataset(test["features"], test["sessions"], test["responses"], args.nouser)

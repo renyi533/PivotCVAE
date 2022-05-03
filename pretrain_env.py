@@ -160,7 +160,7 @@ def main(args):
             trainset.balance_n_click()
             valset = UserSlateResponseDataset(val["features"], val["sessions"], val["responses"], args.nouser)
         elif args.dataset == "movielens":
-            train, val = dae.read_movielens(entire = False)
+            train, val, test = dae.read_movielens(entire = False)
             trainset = UserSlateResponseDataset(train["features"], train["sessions"], train["responses"], args.nouser)
             valset = UserSlateResponseDataset(val["features"], val["sessions"], val["responses"], args.nouser)
     # train response model

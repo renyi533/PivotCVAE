@@ -320,16 +320,17 @@ class NeuMF_cvae(RankModel):
             teacher_input = F.relu(teacher_input)
         teacher_out =  F.normalize(teacher_input, p = 2, dim = 1)
         
-        cvae_input = torch.cat((student_input, teacher_out), 1)
+        if self.training:
+            cvae_input = torch.cat((student_input, teacher_out), 1)
+        else:
+            cvae_input = torch.cat((student_input, student_out), 1)
+            
         for index in self.conditional_decoder_layers: # [2]
             node_num = self.flush_sequence_nn_layers[index] # 64
             cvae_input = nn.Linear(cvae_input.shape[1], node_num).to(self.device)(cvae_input)
             cvae_input = F.relu(cvae_input)
         cvae_out =  cvae_input
-        if self.training:
-            X = torch.cat((X, cvae_out), 1)
-        else:
-            X = X
+        X = torch.cat((X, cvae_out), 1)
         
         for i in range(len(self.mlp_modules) - 1):
             layer = self.mlp_modules[i]
