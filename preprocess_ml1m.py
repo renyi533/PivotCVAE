@@ -32,15 +32,21 @@ for i in range(1,2):
 #         print("user_dir: ", user_dir)
 #         print("resp_dir: ", resp_dir)
         user_dict = {}
+        rating_dict = {}
         with open(base_dir, 'rt') as u1test:
             data = csv.reader(u1test)
             for row in tqdm(data):
                 user_id, item_id, rating, time = row[0].split('\t')
+                if rating not in rating_dict:
+                    rating_dict[rating] = 1
+                else:
+                    rating_dict[rating] = rating_dict[rating] + 1
                 if user_id not in user_dict:
                     user_dict[user_id] = [[time, item_id, rating]]
                 else:
                     user_dict[user_id].append([time, item_id, rating])
             print('num_user:', len(user_dict.keys()))
+            print(rating_dict)
         slate_set = []
         resp_set = []
         user_set = []
@@ -53,20 +59,17 @@ for i in range(1,2):
             rating = [1 if int(rating) > 3 else 0 for _, item, rating in user_dict[key]]
             for k in range(0, len(user_dict[key])//5*5, 5):
                 resp_set.append(rating[k:k+5])
-                user_set.append(key)
+                user_set.append([key])
                 slate_set.append(item[k:k+5])        
         print('number of samples:', len(user_set))
         if not os.path.exists("../data/movielens/"):
             os.makedirs("../data/movielens/")
         if os.path.exists(slate_dir):
             print(slate_dir ,"already exists!")
-            break
         if os.path.exists(user_dir):
             print(user_dir ,"already exists!")
-            break
         if os.path.exists(resp_dir):
             print(resp_dir ,"already exists!")
-            break 
         with open(slate_dir, 'wt') as u1test_slate:
             cw1 = csv.writer(u1test_slate)
             for slate in slate_set:

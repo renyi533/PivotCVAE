@@ -15,7 +15,7 @@ import time as timer
 import data_extract as dae
 from data_loader import UserSlateResponseDataset
 from env.response_model import UserResponseModel_MLP, sample_users
-from models.deterministic import MF, NeuMF, DiverseMF, NeuMF_cvae, PFD
+from models.deterministic import MF, NeuMF, DiverseMF, NeuMF_cvae, PFD, PFD_align
 from my_utils import make_model_path, Logger, ms2str
 import settings
 
@@ -34,23 +34,25 @@ def get_ranking_loss(args, batch_data, model, lossFun):
     pred, stu_out, tea_out = model.forward(slates, targets, u = users)
     prob = model.m(pred)
     loss = lossFun(model.m(pred), targets)
-    if args.model != 'neumf':
-        if len(stu_out[0].shape) == 1:
-            stu_out = torch.cat((stu_out[0].unsqueeze(-1), stu_out[1].unsqueeze(-1), stu_out[2].unsqueeze(-1), stu_out[3].unsqueeze(-1), stu_out[4].unsqueeze(-1) ), 1)
-        else:
-            stu_out = torch.cat(stu_out,1)
-    
     
     if args.model == 'neumf_cvae':
+        stu_out = torch.cat(stu_out,1)
         tea_out = torch.cat(tea_out,1)
         mse = nn.MSELoss()
         loss += args.mse_weight * mse(stu_out, tea_out)
     elif args.model == 'pfd':
-        loss += lossFun(model.m(stu_out), targets)
-        prob_stu = model.m(pred).detach()
-        prob_tea = model.m(stu_out)
+        tea_out_array = []
+        for i in range(len(tea_out)):
+            tea_out_array.append(tea_out[i].unsqueeze(-1))
+            
+        tea_out = torch.cat(tea_out_array, 1)
+        loss += lossFun(model.m(tea_out), targets)
+        #prob_stu = model.m(pred).detach()
+        #prob_tea = model.m(stu_out)
+        with torch.no_grad():
+            tea_out_id =  tea_out.clone().detach() 
         mse = nn.MSELoss()
-        loss += mse(prob_stu, prob_tea)
+        loss += args.mse_weight * mse(tea_out_id, pred)
     return loss
 
 def get_ranking_AUC(batch_data, model):
@@ -102,7 +104,7 @@ def train_ranking(trainset, valset, model, model_path, logger, resp_model, \
     # loss function and optimizer
     BCE = nn.BCELoss()
     m = nn.Sigmoid()
-    optimizer = opt.Adam(model.parameters(), lr = lr)
+    optimizer = opt.Adam(model.parameters(), lr = lr, weight_decay=decay)
     
     runningLoss = []  # step loss history
     trainHistory = [] # epoch training loss
@@ -118,6 +120,7 @@ def train_ranking(trainset, valset, model, model_path, logger, resp_model, \
     for epoch in range(epochs):
         logger.log("Epoch " + str(epoch + 1))
         # training
+        model.train()
         batchLoss = []
         pbar = tqdm(total = len(trainset))
         for i, batchData in enumerate(trainLoader):
@@ -140,6 +143,7 @@ def train_ranking(trainset, valset, model, model_path, logger, resp_model, \
         pbar.close()
 #         logger.log("train loss: " + str(trainHistory[-1]))
 
+        model.eval()
         # validation
         batchLoss = []
         batchProb = []
@@ -274,7 +278,7 @@ def get_ranking_model(args, response_model):
                    args.s, args.dim, args.device, fine_tune = True)
     elif args.model == 'pfd':
         mlpStruct = [int(v) for v in args.struct[1:-1].split(",")]
-        model = PFD(response_model.docEmbed, response_model.userEmbed, mlpStruct, \
+        model = PFD_align(response_model.docEmbed, response_model.userEmbed, mlpStruct, \
                    args.s, args.dim, args.device, fine_tune = True)
     else:
         raise NotImplemented
@@ -326,8 +330,8 @@ if __name__ == '__main__':
     
     parser.add_argument('--dataset', type=str, default='spotify', help='dataset keyword from ' + str(dae.DATA_KEYS))
 #     parser.add_argument('--sim_root', type=bool, default=True, help="load data")
-    parser.add_argument('--dim', type=int, default=8, help='number of latent features')
-    parser.add_argument('--sim_dim', type=int, default=8, help='number of latent features')
+    parser.add_argument('--dim', type=int, default=128, help='number of latent features')
+    parser.add_argument('--sim_dim', type=int, default=128, help='number of latent features')
     parser.add_argument('--s', type=int, default=5, help='number of items in a slate')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=10, help='number of epochs')
@@ -341,7 +345,7 @@ if __name__ == '__main__':
 #     parser.add_argument('--balance', action='store_true', help='apply response balancing')
     
     # used by NeuMF models
-    parser.add_argument('--struct', type=str, default="[32,256,256,1]", help='mlp structure for prediction')
+    parser.add_argument('--struct', type=str, default="[256,256,1]", help='mlp structure for prediction')
     
     # if training generative model
     parser.add_argument('--response', action='store_true', help='training response model for the generation model')

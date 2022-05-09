@@ -22,7 +22,7 @@ import settings
 #                train response model                 #
 #######################################################
 
-def train_response_model(trainset, valset, f_size, s_size, struct, bs, epochs, lr, decay, device, model_path, logger):
+def train_response_model(trainset, valset, testset, f_size, s_size, struct, bs, epochs, lr, decay, device, model_path, logger):
     
 #     python pretrain_env.py --dataset urmpmr --sim_dim 8 --n_user 1000 --n_item 3000 --n_train 100000 --n_val 10000 --n_test 10000 --pbias_min=-0.2 --pbias_max 0.2 --mr_factor 0.2 --dim 8 --resp_struct [48,256,256,5] --batch_size 64 --lr 0.001 --wdecay 0.001 --device cuda:0
         
@@ -48,7 +48,10 @@ def train_response_model(trainset, valset, f_size, s_size, struct, bs, epochs, l
     logger.log("\tdevice: " + device)
     
     # set up model
-    model = UserResponseModel_MLP(trainset.max_iid, trainset.max_uid, \
+    max_iid = max(trainset.max_iid, max(testset.max_iid, valset.max_iid))
+    max_uid = max(trainset.max_uid, max(testset.max_uid, valset.max_uid))
+    print('max_iid: %d, max_uid: %d' % (max_iid, max_uid))
+    model = UserResponseModel_MLP(max_iid, max_uid, \
                                   f_size, s_size, struct, device, trainset.noUser)
     model.to(device)
 
@@ -163,6 +166,7 @@ def main(args):
             train, val, test = dae.read_movielens(entire = False)
             trainset = UserSlateResponseDataset(train["features"], train["sessions"], train["responses"], args.nouser)
             valset = UserSlateResponseDataset(val["features"], val["sessions"], val["responses"], args.nouser)
+            testset = UserSlateResponseDataset(test["features"], test["sessions"], test["responses"], args.nouser)
     # train response model
     modelPath = utils.make_resp_model_path(args, "resp/")
     # [48,256,256,5]
@@ -170,7 +174,7 @@ def main(args):
     struct = [int(v) for v in args.resp_struct[1:-1].split(",")]
     import setproctitle 
     setproctitle.setproctitle("Kassandra")
-    train_response_model(trainset, valset,\
+    train_response_model(trainset, valset, testset,\
                          args.dim, args.s, struct, args.batch_size, \
                          args.epochs, args.lr, args.wdecay, args.device, modelPath, logger)
 

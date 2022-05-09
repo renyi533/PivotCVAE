@@ -65,7 +65,9 @@ def make_config_path(args, root):
     model_path = root + '_'
     model_path += 'BS%d_' % args.batch_size
     model_path += 'lr%.5f_' % args.lr
-    model_path += 'decay%.5f' % args.wdecay
+    model_path += 'decay%.5f_' % args.wdecay
+    if hasattr(args, 'mse_weight'):
+        model_path += 'mse_weight%.5f' % args.mse_weight    
     return model_path
 
 def make_resp_model_path(args, root):
@@ -92,8 +94,8 @@ def make_gen_model_path(args, root):
 def make_model_path(args, root):
     model_path = make_data_path(args, root) + "/"
     model_path += args.model
-    if "neumf" in args.model:
-        model_path += "_struct" + str(args.struct)
+    #if "neumf" in args.model:
+    model_path += "_struct" + str(args.struct)
     model_path += make_config_path(args, model_path)
     build_path(model_path)
     return model_path

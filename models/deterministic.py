@@ -25,8 +25,8 @@ class RankModel(nn.Module):
         super(RankModel, self).__init__()
         print(embeddings.weight.shape[1])
         print(feature_size)
-        assert embeddings.weight.shape[1] == feature_size
-        assert u_embeddings.weight.shape[1] == feature_size
+        #assert embeddings.weight.shape[1] == feature_size
+        #assert u_embeddings.weight.shape[1] == feature_size
         self.candidateFlag = False
         self.slate_size = slate_size
         self.feature_size = feature_size
@@ -36,16 +36,16 @@ class RankModel(nn.Module):
         with torch.no_grad():
             # doc embedding
             print("\tLoad pretrained document latent embedding")
-            self.docEmbed = nn.Embedding(embeddings.weight.shape[0], embeddings.weight.shape[1])
-            self.docEmbed.weight.data.copy_(F.normalize(embeddings.weight, p = 2, dim = 1))
+            self.docEmbed = nn.Embedding(embeddings.weight.shape[0], feature_size)
+            #self.docEmbed.weight.data.copy_(F.normalize(embeddings.weight, p = 2, dim = 1))
     #         self.docEmbed.weight.data.copy_(embeddings.weight)
             self.docEmbed.weight.requires_grad=fine_tune
             print("\t\tDoc embedding shape: " + str(self.docEmbed.weight.shape))
 
             # user embedding
             print("\tCopying user latent embedding")
-            self.userEmbed = nn.Embedding(u_embeddings.weight.shape[0], u_embeddings.weight.shape[1])
-            self.userEmbed.weight.data.copy_(F.normalize(u_embeddings.weight, p = 2, dim = 1))
+            self.userEmbed = nn.Embedding(u_embeddings.weight.shape[0], feature_size)
+            #self.userEmbed.weight.data.copy_(F.normalize(u_embeddings.weight, p = 2, dim = 1))
 #             self.userEmbed.weight.data.copy_(u_embeddings.weight)
             self.userEmbed.weight.requires_grad=fine_tune
             print("\t\tUser embedding shape: " + str(self.userEmbed.weight.shape))
@@ -242,7 +242,7 @@ class NeuMF_cvae(RankModel):
     """
     def __init__(self, embeddings, u_embeddings, struct, \
                  slate_size, feature_size, device, fine_tune = True):
-        print("Initialize NeuMF model...")
+        print("Initialize NeuMF cvae model...")
         super(NeuMF_cvae, self).__init__(embeddings, u_embeddings, \
                  slate_size, feature_size, device, fine_tune = fine_tune)
         
@@ -261,10 +261,14 @@ class NeuMF_cvae(RankModel):
         # MLP item embedding
         self.docMLPEmbed = nn.Embedding(embeddings.weight.shape[0], feature_size)
         nn.init.kaiming_uniform_(self.docMLPEmbed.weight)
-        
+
+        self.docSlateMLPEmbed = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docSlateMLPEmbed.weight)
+                
         # set for cvae structure
         self.flush_seq_len = 18
-        self.flush_sequence_nn_layers = [16, 8, 16]
+        #self.flush_sequence_nn_layers = [2*feature_size, feature_size, 2*feature_size]
+        self.flush_sequence_nn_layers = [128, 64, 128]
         self.conditional_decoder_layers = [2]
         self.prior_encoder_layers = [0, 1]
         self.conditional_encoder_layers = [0, 1]
@@ -276,6 +280,8 @@ class NeuMF_cvae(RankModel):
         # mlp part
         self.mlp_modules = list()
         for i in range(len(self.structure) - 1):
+            if i == 0:
+                self.structure[i] = 2*feature_size + self.flush_sequence_nn_layers[-1]
             module = nn.Linear(self.structure[i], self.structure[i+1])
             torch.nn.init.kaiming_uniform_(module.weight)
             self.mlp_modules.append(module)
@@ -292,14 +298,14 @@ class NeuMF_cvae(RankModel):
         iGE = self.docEmbed(items.view(-1))
         # sltae embeddings
         i1, i2, i3, i4, i5 = slate[:,0], slate[:,1], slate[:,2], slate[:,3], slate[:,4]
-        i1ME =  self.docMLPEmbed(i1.view(-1))
-        i2ME =  self.docMLPEmbed(i2.view(-1))
-        i3ME =  self.docMLPEmbed(i3.view(-1))
-        i4ME =  self.docMLPEmbed(i4.view(-1))
-        i5ME =  self.docMLPEmbed(i5.view(-1))
+        i1ME =  self.docSlateMLPEmbed(i1.view(-1))
+        i2ME =  self.docSlateMLPEmbed(i2.view(-1))
+        i3ME =  self.docSlateMLPEmbed(i3.view(-1))
+        i4ME =  self.docSlateMLPEmbed(i4.view(-1))
+        i5ME =  self.docSlateMLPEmbed(i5.view(-1))
         
         slate_emb = torch.cat((i1ME, i2ME, i3ME, i4ME, i5ME), 1) # [64, 40]
-        slate_emb = nn.Linear(slate_emb.shape[1], 16).to(self.device)(slate_emb)
+        #slate_emb = nn.Linear(slate_emb.shape[1], 16).to(self.device)(slate_emb)
         
         # GMF output
         gmfOutput = self.gmf(torch.mul(uGE, iGE))
@@ -311,19 +317,23 @@ class NeuMF_cvae(RankModel):
             node_num = self.flush_sequence_nn_layers[index] # [64, 32]
             student_input = nn.Linear(student_input.shape[1], node_num).to(self.device)(student_input)
             student_input = F.relu(student_input)
-        student_out = F.normalize(student_input, p = 2, dim = 1)
+        #student_out = F.normalize(student_input, p = 2, dim = 1)
+        student_out = student_input
         # teacher input
         teacher_input = torch.cat((uME, slate_emb), 1)
         for index in self.conditional_encoder_layers: # [0, 1]
             node_num = self.flush_sequence_nn_layers[index] # [64, 32]
             teacher_input = nn.Linear(teacher_input.shape[1], node_num).to(self.device)(teacher_input)
             teacher_input = F.relu(teacher_input)
-        teacher_out =  F.normalize(teacher_input, p = 2, dim = 1)
+        #teacher_out =  F.normalize(teacher_input, p = 2, dim = 1)
+        teacher_out = teacher_input
         
         if self.training:
-            cvae_input = torch.cat((student_input, teacher_out), 1)
+            cvae_input = torch.cat((uME, teacher_out), 1)
+            print('training mode')
         else:
-            cvae_input = torch.cat((student_input, student_out), 1)
+            cvae_input = torch.cat((uME, student_out), 1)
+            print('inference mode')
             
         for index in self.conditional_decoder_layers: # [2]
             node_num = self.flush_sequence_nn_layers[index] # 64
@@ -359,7 +369,7 @@ class PFD(RankModel):
     """
     def __init__(self, embeddings, u_embeddings, struct, \
                  slate_size, feature_size, device, fine_tune = True):
-        print("Initialize NeuMF model...")
+        print("Initialize pfd model...")
         super(PFD, self).__init__(embeddings, u_embeddings, \
                  slate_size, feature_size, device, fine_tune = fine_tune)
         
@@ -379,6 +389,21 @@ class PFD(RankModel):
         self.docMLPEmbed = nn.Embedding(embeddings.weight.shape[0], feature_size)
         nn.init.kaiming_uniform_(self.docMLPEmbed.weight)
 
+        self.docSlateMLPEmbed = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docSlateMLPEmbed.weight)
+
+        self.userMLPEmbed_t = nn.Embedding(u_embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.userMLPEmbed.weight)
+        # MLP item embedding
+        self.docMLPEmbed_t = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docMLPEmbed.weight)
+
+        self.userEmbed_t = nn.Embedding(u_embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.userMLPEmbed.weight)
+        # MLP item embedding
+        self.docEmbed_t = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docMLPEmbed.weight)
+        
         # setup model structure
         print("\tCreating predictive model")
         self.mlp_modules = list()
@@ -391,7 +416,7 @@ class PFD(RankModel):
         self.tea_mlp_modules = list()
         for i in range(len(self.structure) - 1):
             if i == 0:  
-                module = nn.Linear(self.structure[i]+16, self.structure[i+1])
+                module = nn.Linear(self.structure[i]+feature_size*5, self.structure[i+1])
             else:
                 module = nn.Linear(self.structure[i], self.structure[i+1])
             torch.nn.init.kaiming_uniform_(module.weight)
@@ -399,29 +424,35 @@ class PFD(RankModel):
             self.add_module("tea_mlp_" + str(i), module)
         # final output
         self.outAlpha = nn.Parameter(torch.tensor(0.5).to(self.device), requires_grad = True)
+        self.outAlpha_t = nn.Parameter(torch.tensor(0.5).to(self.device), requires_grad = True)
 
     def point_forward(self, users, items, slate):
         # user embeddings
         uME = self.userMLPEmbed(users.view(-1))
         uGE = self.userEmbed(users.view(-1))
+        
+        uME_t = self.userMLPEmbed_t(users.view(-1))
+        uGE_t = self.userEmbed_t(users.view(-1))
         # item embeddings
         iME = self.docMLPEmbed(items.view(-1))
         iGE = self.docEmbed(items.view(-1))
-        
+        iME_t = self.docMLPEmbed_t(items.view(-1))
+        iGE_t = self.docEmbed_t(items.view(-1))        
         # sltae embeddings
         i1, i2, i3, i4, i5 = slate[:,0], slate[:,1], slate[:,2], slate[:,3], slate[:,4]
-        i1ME =  self.docMLPEmbed(i1.view(-1))
-        i2ME =  self.docMLPEmbed(i2.view(-1))
-        i3ME =  self.docMLPEmbed(i3.view(-1))
-        i4ME =  self.docMLPEmbed(i4.view(-1))
-        i5ME =  self.docMLPEmbed(i5.view(-1))
-        
+        i1ME =  self.docSlateMLPEmbed(i1.view(-1))
+        i2ME =  self.docSlateMLPEmbed(i2.view(-1))
+        i3ME =  self.docSlateMLPEmbed(i3.view(-1))
+        i4ME =  self.docSlateMLPEmbed(i4.view(-1))
+        i5ME =  self.docSlateMLPEmbed(i5.view(-1))
+                
         slate_emb = torch.cat((i1ME, i2ME, i3ME, i4ME, i5ME), 1) # [64, 40]
-        slate_emb = nn.Linear(slate_emb.shape[1], 16).to(self.device)(slate_emb)
+        #slate_emb = nn.Linear(slate_emb.shape[1], 16).to(self.device)(slate_emb)
         
     
         # GMF output
-        gmfOutput = self.gmf(torch.mul(uGE, iGE))
+        gmfOutput = self.gmf(torch.mul(iGE, uGE))
+        gmfOutput_t = self.gmf(torch.mul(iGE_t, uGE_t))
         # student MLP output
         X = torch.cat((uME, iME), 1)
         for i in range(len(self.mlp_modules) - 1):
@@ -429,22 +460,167 @@ class PFD(RankModel):
             X = F.relu(layer(X))
         mlpOutput = self.mlp_modules[-1](X)
         # teacher MLP output
-        Y = torch.cat((uME, iME, slate_emb), 1) # +16
+        Y = torch.cat((uME_t, iME_t, slate_emb), 1) # +16
         for i in range(len(self.tea_mlp_modules) - 1):
             layer = self.tea_mlp_modules[i]
             Y = F.relu(layer(Y))
         teamlpOutput = self.tea_mlp_modules[-1](Y)
         
         # Integrate GMF and MLP outputs
+        teacher_out = self.outAlpha_t * gmfOutput_t + (1 - self.outAlpha_t) * teamlpOutput
         out = self.outAlpha * gmfOutput + (1 - self.outAlpha) * mlpOutput
-        return out.view(-1), teamlpOutput.view(-1), 0
+            
+        return out.view(-1), out.view(-1), teacher_out.view(-1)
     
     def recommend(self, r, u = None, return_item = False):
         p = torch.zeros(u.shape[0], self.docEmbed.weight.shape[0]).to(self.device)
         candItems = torch.arange(self.docEmbed.weight.shape[0]).to(torch.long).to(self.device)
         users = torch.ones(self.docEmbed.weight.shape[0]).to(torch.long).to(self.device)
         for i in range(u.shape[0]):
-            p[i], tea_p[i], _ = self.point_forward(users * u.view(-1)[i], candItems)
+            p[i], _, _ = self.point_forward(users * u.view(-1)[i], candItems)
+        _, recItems = torch.topk(p, self.slate_size)
+        if return_item:
+            return recItems, None
+        else:
+            rx = self.docEmbed(recItems).reshape(-1, self.slate_size * self.feature_size)
+            return rx, None
+        
+class PFD_align(RankModel):
+    """
+    Biased MF
+    """
+    def __init__(self, embeddings, u_embeddings, struct, \
+                 slate_size, feature_size, device, fine_tune = True):
+        print("Initialize pfd align model...")
+        super(PFD_align, self).__init__(embeddings, u_embeddings, \
+                 slate_size, feature_size, device, fine_tune = fine_tune)
+        
+        # MLP structure hyperparams
+        self.structure = struct
+        assert len(self.structure) >= 2
+#         assert self.structure[0] == 2 * feature_size
+        
+        # GMF part
+        self.gmf = nn.Linear(feature_size, 1)
+        
+        print("\tCreating embedding")
+        # MLP user embedding
+        self.userMLPEmbed = nn.Embedding(u_embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.userMLPEmbed.weight)
+        # MLP item embedding
+        self.docMLPEmbed = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docMLPEmbed.weight)
+
+        self.docSlateMLPEmbed = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docSlateMLPEmbed.weight)
+
+        self.userMLPEmbed_t = nn.Embedding(u_embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.userMLPEmbed.weight)
+        # MLP item embedding
+        self.docMLPEmbed_t = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docMLPEmbed.weight)
+
+        self.userEmbed_t = nn.Embedding(u_embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.userMLPEmbed.weight)
+        # MLP item embedding
+        self.docEmbed_t = nn.Embedding(embeddings.weight.shape[0], feature_size)
+        nn.init.kaiming_uniform_(self.docMLPEmbed.weight)
+
+        self.flush_sequence_nn_layers = [128, 64, 128]
+        self.conditional_decoder_layers = [2]
+        self.prior_encoder_layers = [0, 1]
+        self.conditional_encoder_layers = [0, 1]
+                
+        # setup model structure
+        print("\tCreating predictive model")
+        self.mlp_modules = list()
+        for i in range(len(self.structure) - 1):
+            module = nn.Linear(self.structure[i], self.structure[i+1])
+            torch.nn.init.kaiming_uniform_(module.weight)
+            self.mlp_modules.append(module)
+            self.add_module("mlp_" + str(i), module)
+        # teacher mlp part
+        self.tea_mlp_modules = list()
+        for i in range(len(self.structure) - 1):
+            if i == 0:  
+                self.structure[i] = 2*feature_size + self.flush_sequence_nn_layers[-1]
+            module = nn.Linear(self.structure[i], self.structure[i+1])
+            torch.nn.init.kaiming_uniform_(module.weight)
+            self.tea_mlp_modules.append(module)
+            self.add_module("tea_mlp_" + str(i), module)
+        # final output
+        self.outAlpha = nn.Parameter(torch.tensor(0.5).to(self.device), requires_grad = True)
+        self.outAlpha_t = nn.Parameter(torch.tensor(0.5).to(self.device), requires_grad = True)
+
+    def point_forward(self, users, items, slate):
+        # user embeddings
+        uME = self.userMLPEmbed(users.view(-1))
+        uGE = self.userEmbed(users.view(-1))
+        
+        uME_t = self.userMLPEmbed_t(users.view(-1))
+        uGE_t = self.userEmbed_t(users.view(-1))
+        # item embeddings
+        iME = self.docMLPEmbed(items.view(-1))
+        iGE = self.docEmbed(items.view(-1))
+        iME_t = self.docMLPEmbed_t(items.view(-1))
+        iGE_t = self.docEmbed_t(items.view(-1))        
+        # sltae embeddings
+        i1, i2, i3, i4, i5 = slate[:,0], slate[:,1], slate[:,2], slate[:,3], slate[:,4]
+        i1ME =  self.docSlateMLPEmbed(i1.view(-1))
+        i2ME =  self.docSlateMLPEmbed(i2.view(-1))
+        i3ME =  self.docSlateMLPEmbed(i3.view(-1))
+        i4ME =  self.docSlateMLPEmbed(i4.view(-1))
+        i5ME =  self.docSlateMLPEmbed(i5.view(-1))
+                
+        slate_emb = torch.cat((i1ME, i2ME, i3ME, i4ME, i5ME), 1) # [64, 40]
+        #slate_emb = nn.Linear(slate_emb.shape[1], 16).to(self.device)(slate_emb)
+        
+    
+        # GMF output
+        gmfOutput = self.gmf(torch.mul(iGE, uGE))
+        gmfOutput_t = self.gmf(torch.mul(iGE_t, uGE_t))
+        # student MLP output
+        X = torch.cat((uME, iME), 1)
+        for i in range(len(self.mlp_modules) - 1):
+            layer = self.mlp_modules[i]
+            X = F.relu(layer(X))
+        mlpOutput = self.mlp_modules[-1](X)
+        # teacher MLP output
+        
+        teacher_input = torch.cat((uME_t, slate_emb), 1)
+        for index in self.conditional_encoder_layers: # [0, 1]
+            node_num = self.flush_sequence_nn_layers[index] # [64, 32]
+            teacher_input = nn.Linear(teacher_input.shape[1], node_num).to(self.device)(teacher_input)
+            teacher_input = F.relu(teacher_input)
+        #teacher_out =  F.normalize(teacher_input, p = 2, dim = 1)
+        teacher_out = teacher_input
+        
+        cvae_input = torch.cat((uME_t, teacher_out), 1)
+            
+        for index in self.conditional_decoder_layers: # [2]
+            node_num = self.flush_sequence_nn_layers[index] # 64
+            cvae_input = nn.Linear(cvae_input.shape[1], node_num).to(self.device)(cvae_input)
+            cvae_input = F.relu(cvae_input)
+        cvae_out =  cvae_input
+        
+        Y = torch.cat((uME_t, iME_t, cvae_out), 1) # +16
+        for i in range(len(self.tea_mlp_modules) - 1):
+            layer = self.tea_mlp_modules[i]
+            Y = F.relu(layer(Y))
+        teamlpOutput = self.tea_mlp_modules[-1](Y)
+        
+        # Integrate GMF and MLP outputs
+        teacher_out = self.outAlpha_t * gmfOutput_t + (1 - self.outAlpha_t) * teamlpOutput
+        out = self.outAlpha * gmfOutput + (1 - self.outAlpha) * mlpOutput
+            
+        return out.view(-1), out.view(-1), teacher_out.view(-1)
+    
+    def recommend(self, r, u = None, return_item = False):
+        p = torch.zeros(u.shape[0], self.docEmbed.weight.shape[0]).to(self.device)
+        candItems = torch.arange(self.docEmbed.weight.shape[0]).to(torch.long).to(self.device)
+        users = torch.ones(self.docEmbed.weight.shape[0]).to(torch.long).to(self.device)
+        for i in range(u.shape[0]):
+            p[i], _, _ = self.point_forward(users * u.view(-1)[i], candItems)
         _, recItems = torch.topk(p, self.slate_size)
         if return_item:
             return recItems, None
